@@ -1,0 +1,11 @@
+{
+  "name": "顔固定 直接生成",
+  "short_name": "顔固定",
+  "start_url": "./direct.html",
+  "display": "standalone",
+  "background_color": "#0d0e11",
+  "theme_color": "#0d0e11",
+  "icons": [
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
