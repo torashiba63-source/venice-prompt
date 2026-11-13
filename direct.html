@@ -1,0 +1,403 @@
+<!-- 個人用。キーは端末の localStorage にのみ保存される。ビルド不要 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>顔固定 直接生成</title>
+<style>
+:root{--bg:#0d0e11;--fg:#e9e9ec;--muted:#9a9aa4;--card:#16181d;--in:#1e2027;
+--bd:#2b2e37;--pri:#5b8cff;--sec:#232630;--err:#ff6b6b;--ok:#3ecf8e}
+@media(prefers-color-scheme:light){:root{--bg:#fafafa;--fg:#15161a;--muted:#5f636e;
+--card:#fff;--in:#f2f3f6;--bd:#e2e4ea;--pri:#2f6bff;--sec:#eceef3;--err:#d33;--ok:#0a8f5b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 Inter,system-ui,"Hiragino Sans",sans-serif}
+.app{max-width:900px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:17px;font-weight:600;margin:0 0 2px}
+.lead{font-size:12px;color:var(--muted);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:13px;margin-bottom:12px}
+.card h2{font-size:12.5px;font-weight:600;margin:0 0 2px}
+.card .sub{font-size:11px;color:var(--muted);margin:0 0 10px}
+.slots{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+@media(max-width:620px){.slots{grid-template-columns:1fr}}
+.slot{border:1px dashed var(--bd);border-radius:12px;padding:10px;text-align:center;
+  background:var(--card);cursor:pointer;min-height:150px;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;gap:6px}
+.slot.over{border-color:var(--pri)}
+.slot b{font-size:12px;font-weight:600}
+.slot small{font-size:11px;color:var(--muted);line-height:1.4}
+.slot img{max-width:100%;max-height:150px;border-radius:8px;object-fit:contain}
+.slot .tag{font-size:10.5px;color:var(--muted)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+@media(max-width:620px){.row{grid-template-columns:1fr}}
+label.f{display:block;font-size:11px;color:var(--muted);margin:9px 0 3px}
+select,input,textarea{width:100%;background:var(--in);color:var(--fg);border:1px solid var(--bd);
+  border-radius:7px;padding:7px 9px;font:inherit;font-size:12.5px}
+textarea{resize:vertical;min-height:44px}
+.chk{display:flex;gap:6px;align-items:flex-start;font-size:12px;padding:2px 0;cursor:pointer}
+.chk input{margin:3px 0 0;accent-color:var(--pri);flex:none}
+.chk2{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media(max-width:620px){.chk2{grid-template-columns:1fr}}
+.inline{display:flex;flex-wrap:wrap;gap:13px;margin-top:9px;font-size:12px}
+.inline label{display:flex;gap:5px;align-items:center;cursor:pointer}
+button{font:inherit;font-size:12.5px;font-weight:600;padding:8px 15px;border-radius:8px;
+  border:1px solid transparent;cursor:pointer}
+.primary{background:var(--pri);color:#fff}
+.ghost{background:var(--sec);color:var(--fg);border-color:var(--bd)}
+button:disabled{opacity:.5;cursor:default}
+.meter{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.meter.over{color:var(--err);font-weight:600}
+#prompt{min-height:170px;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+.msg{border-radius:9px;padding:10px 12px;font-size:12.5px;margin-top:10px;display:none;line-height:1.6}
+.msg.on{display:block}
+.msg.err{background:rgba(255,107,107,.12);border:1px solid var(--err);color:var(--err)}
+.msg.ok{background:rgba(62,207,142,.12);border:1px solid var(--ok)}
+.result img{max-width:100%;border-radius:10px;display:block;margin-top:10px}
+details{border:1px solid var(--bd);border-radius:12px;padding:11px 13px;background:var(--card);margin-top:12px}
+summary{font-size:12px;font-weight:600;cursor:pointer}
+details ul{margin:7px 0 0;padding-left:17px;font-size:11.5px;line-height:1.7;color:var(--muted)}
+.keyrow{display:flex;gap:7px}
+.keyrow input{flex:1}
+</style>
+<div class="app">
+<h1>顔固定・直接生成</h1>
+<p class="lead">1枚目の顔を保ったまま2枚目の構図に。Venice API を端末から直接叩く。キーは localStorage のみ。</p>
+
+<div class="slots">
+  <div class="slot" id="slotFace" data-k="face">
+    <b>1枚目 ／ 顔</b><small>同一性の供給源。毎回同じ写真を使う</small><span class="tag">タップして選択</span>
+  </div>
+  <div class="slot" id="slotComp" data-k="comp">
+    <b>2枚目 ／ 構図</b><small>ベース画像。出力の比率もこれに従う</small><span class="tag">タップして選択</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>プロンプト</h2>
+  <p class="sub">下の条件から自動生成。手で書き換えてもよい。</p>
+  <div class="row">
+    <div><label class="f" for="sex">性別</label>
+      <select id="sex"><option value="female">女性</option><option value="male">男性</option><option value="androgynous">中性</option></select></div>
+    <div><label class="f" for="nude">露出</label>
+      <select id="nude"><option value="lingerie, bra and panties">下着</option>
+      <option value="topless, breasts bare, bottom still covered">トップレス</option>
+      <option value="fully nude" selected>全裸</option>
+      <option value="fully nude, legs apart">全裸・脚を開く</option></select></div>
+  </div>
+  <div class="row">
+    <div><label class="f" for="build">体つき</label>
+      <select id="build"><option value="">指定なし</option><option value="slim build">細身</option>
+      <option value="average soft build with visible soft belly">普通・柔らかい</option>
+      <option value="curvy build, wide hips, full thighs">グラマー</option>
+      <option value="athletic build, visible muscle tone">筋肉質</option></select></div>
+    <div><label class="f" for="anat">アナトミー</label>
+      <select id="anat"><option value="explicit anatomy">標準</option>
+      <option value="explicit anatomy, highly detailed genital definition" selected>強め</option>
+      <option value="explicit anatomy, soft focus on the body">弱め</option></select></div>
+  </div>
+  <div class="row">
+    <div><label class="f" for="facevis">顔の可視性</label>
+      <select id="facevis"><option value="face fully visible, evenly lit and sharp">完全に見せる</option>
+      <option value="face in three-quarter view, still readable">斜め・判読可</option>
+      <option value="face partly turned away">顔を外す</option></select></div>
+    <div><label class="f" for="pose">ポーズ</label>
+      <select id="pose"><option value="">2枚目に従う</option>
+      <option value="standing nude, weight on one hip">立ち</option>
+      <option value="reclining on one side, facing camera">横たわる</option>
+      <option value="on all fours, arching the back">四つん這い</option>
+      <option value="seated with knees drawn up">座り</option>
+      <option value="standing, seen from behind, looking back">背面</option></select></div>
+  </div>
+  <label class="f" for="extra">補足（日本語可）</label>
+  <textarea id="extra" placeholder="例：鎖骨が浮く、斜めからの硬い一灯、無地のベージュ背景"></textarea>
+  <div class="chk2" style="margin-top:8px">
+    <label class="chk"><input type="checkbox" class="g" data-k="no beauty retouching, no plastic AI look" checked>美化しない</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="do not slim the waist, hips or jaw" checked>腰・顎を細くしない</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="do not enlarge the breasts or reshape them" checked>胸を盛らない</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="do not smooth or airbrush the skin" checked>肌を平滑化しない</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="do not blur or censor the genitals" checked>陰部をぼかさない</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="do not blend input image 2's face into the subject" checked>2枚目の顔を混ぜない</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="hands and fingers anatomically correct" checked>手指の破綻を防ぐ</label>
+    <label class="chk"><input type="checkbox" class="g" data-k="do not use text, watermark or collage">文字・透かしなし</label>
+  </div>
+  <div class="meter" id="meter">0 / 1500</div>
+  <textarea id="prompt" spellcheck="false"></textarea>
+  <div class="btns">
+    <button class="primary" id="run">生成</button>
+    <button class="ghost" id="chain">3ステップで回す</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="card result" id="resultCard" style="display:none">
+  <h2>結果</h2>
+  <div id="result"></div>
+  <div class="btns">
+    <button class="ghost" id="dl">ダウンロード</button>
+    <button class="ghost" id="asComp">これを2枚目にする</button>
+  </div>
+</div>
+
+<details>
+  <summary>設定（キー・モデル）</summary>
+  <label class="f" for="key">API キー</label>
+  <div class="keyrow">
+    <input type="password" id="key" placeholder="sk-...">
+    <button class="ghost" id="keySave">保存</button>
+    <button class="ghost" id="keyDel">消去</button>
+  </div>
+  <div class="row">
+    <div><label class="f" for="model">モデル</label>
+      <select id="model"><option value="firered-image-edit">firered-image-edit</option>
+      <option value="qwen-edit-uncensored">qwen-edit-uncensored</option></select></div>
+    <div><label class="f" for="res">解像度</label>
+      <select id="res"><option value="1K" selected>1K</option><option value="2K">2K</option></select></div>
+  </div>
+  <label class="f" for="base">ベース URL（CORS が通らないときだけ変更）</label>
+  <input id="base" placeholder="https://api.venice.ai/api/v1">
+  <div class="inline"><label><input type="checkbox" id="enh">プロンプト拡張を有効（+$0.04）</label></div>
+  <p class="sub" style="margin-top:8px">firered は1回 $0.04。キーはこの端末の localStorage に平文で入る。</p>
+</details>
+
+<details>
+  <summary>詰まりやすい点</summary>
+  <ul>
+    <li>出力比率はベース画像（2枚目）に従う。縦にしたいなら2枚目を縦にする。</li>
+    <li>1枚目は毎回同じ元写真。前回出力を1枚目にすると数回で顔がドリフトする。</li>
+    <li>3ステップは「構図合わせ → 脱衣 → 造形」。一発で全裸にすると顔と体が同時に崩れる。</li>
+    <li>局部が溶けたらアナトミーを強め、顔が崩れたら弱め。同時に上げない。</li>
+    <li>手指は崩れる。手を画面外に落とすポーズが安定。</li>
+    <li>422 は内容ポリシーか画像過大。429 は混雑。どちらも少し待って再試行。</li>
+  </ul>
+</details>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const LS = { key:'vapi.key', base:'vapi.base' };
+  const DICT = {'笑顔':'smiling','逆光':'backlit','自然光':'natural light','夜':'night',
+    '屋外':'outdoors','室内':'indoors','街':'city street','寝室':'a bedroom','無地':'seamless',
+    'ベージュ':'beige','黒':'black','白':'white','斜めから':'from the side','硬い一灯':'a single hard light',
+    '鎖骨':'collarbones','腰':'waist','肉':'softness','汗':'sweat','テカリ':'skin sheen'};
+  const tr = s => { let o = s; for (const k in DICT) o = o.split(k).join(DICT[k]); return o.trim(); };
+  const SEX = { female:'adult woman', male:'adult man', androgynous:'adult androgynous person' };
+  const ANAT = { female:'visible vulva with defined labia majora and minora',
+    male:'visible penis and scrotum, natural state',
+    androgynous:'visible genital anatomy, natural state' };
+  let face = null, comp = null, lastURL = null;
+
+  const msg = (t, kind) => {
+    const m = $('#msg'); m.className = 'msg on ' + (kind || '');
+    m.textContent = t;
+  };
+  const clearMsg = () => { $('#msg').className = 'msg'; };
+
+  function build() {
+    const L = [];
+    L.push('TASK');
+    L.push('Edit the base image into a new photograph. The subject is the exact same individual as the second input image, a real adult.');
+    L.push('INPUT ORDER — image 1 = base composition, image 2 = identity reference.');
+    L.push('');
+    L.push('IDENTITY — from image 2, reproduce, do not idealize');
+    L.push('Same skull, same face outline, same eye spacing, same nose and jaw. Identical individual, not a lookalike.');
+    L.push('Face handling: ' + $('#facevis').value + '.');
+    L.push('Keep the hairstyle of image 2.');
+    L.push('');
+    L.push('BODY — from image 2, do not resculpt');
+    const b = [];
+    if ($('#build').value) b.push($('#build').value);
+    if ($('#sex').value === 'female') b.push('breasts matching image 2');
+    b.push('waist-to-hip ratio preserved', 'natural skin texture, fine hair, subtle blemishes',
+      'moles and marks carried over from image 2');
+    L.push(b.join('; ') + '.');
+    L.push('');
+    L.push('NUDITY — ' + SEX[$('#sex').value] + ', ' + $('#nude').value);
+    const a = [ANAT[$('#sex').value]];
+    const an = $('#anat').value;
+    if (an.includes('highly detailed')) a.push('genital forms crisp and separate from the thighs, no melting');
+    if (an.includes('soft focus')) a.push('anatomy correct but not over-rendered, face keeps priority');
+    L.push('Anatomy: ' + a.join(', ') + '.');
+    L.push('');
+    L.push('COMPOSITION — keep the base image');
+    const c = [];
+    if ($('#pose').value) c.push($('#pose').value);
+    if ($('#extra').value) c.push(tr($('#extra').value));
+    L.push(c.length ? 'Use: ' + c.join(', ') + '.' : 'Keep framing, angle, lighting and background of the base image.');
+    L.push('The subject sits at the same position and scale as in the base image.');
+    L.push('');
+    L.push('INVARIANTS');
+    const g = $$('.g').filter(e => e.checked).map(e => e.dataset.k);
+    if (g.length) L.push(g.join('; ') + '.');
+    L.push('');
+    L.push('OUTPUT');
+    L.push('Photographic realism, natural pores, sharp focus on the eyes, correct perspective.');
+    const t = L.join('\n');
+    $('#prompt').value = t;
+    $('#meter').textContent = t.length + ' / 1500';
+    $('#meter').classList.toggle('over', t.length > 1500);
+  }
+
+  async function toB64(file, maxEdge = 2048) {
+    const bmp = await createImageBitmap(file);
+    const sc = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * sc), h = Math.round(bmp.height * sc);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let s = ''; for (const x of buf) s += String.fromCharCode(x);
+    return { b64: btoa(s), w, h };
+  }
+
+  function bindSlot(el, kind) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.hidden = true;
+    document.body.appendChild(inp);
+    const set = async f => {
+      if (!f) return;
+      const r = await toB64(f);
+      const url = URL.createObjectURL(f);
+      el.innerHTML = `<b>${kind === 'face' ? '1枚目 ／ 顔' : '2枚目 ／ 構図'}</b>
+        <img src="${url}" alt=""><span class="tag">${r.w}×${r.h}　タップで変更</span>`;
+      if (kind === 'face') face = r; else comp = r;
+      if (r.w < 256 || r.h < 256) msg('短辺が256px未満。API が弾く可能性あり', 'err');
+    };
+    el.addEventListener('click', () => inp.click());
+    inp.addEventListener('change', e => set(e.target.files[0]));
+  }
+  bindSlot($('#slotFace'), 'face');
+  bindSlot($('#slotComp'), 'comp');
+
+  const apiBase = () => ($('#base').value.trim() || 'https://api.venice.ai/api/v1').replace(/\/$/, '');
+
+  async function callApi(prompt, baseB64, refB64) {
+    const key = $('#key').value.trim() || localStorage.getItem(LS.key) || '';
+    if (!key) throw new Error('NO_KEY');
+    if (!baseB64 || !refB64) throw new Error('NO_IMAGE');
+    const body = {
+      modelId: $('#model').value,
+      prompt,
+      images: [baseB64, refB64],
+      safe_mode: false,
+      output_format: 'png',
+      resolution: $('#res').value
+    };
+    if ($('#enh').checked) body.enhance_prompt = true;
+    let res;
+    try {
+      res = await fetch(apiBase() + '/image/multi-edit', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (e) {
+      throw new Error('CORS');
+    }
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.text()).slice(0, 200); } catch {}
+      throw new Error('HTTP_' + res.status + '|' + detail);
+    }
+    return await res.blob();
+  }
+
+  function showResult(blob) {
+    if (lastURL) URL.revokeObjectURL(lastURL);
+    lastURL = URL.createObjectURL(blob);
+    $('#resultCard').style.display = 'block';
+    $('#result').innerHTML = `<img src="${lastURL}" alt="生成結果">`;
+    $('#resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  const ERR = {
+    NO_KEY: 'API キーが未設定。「設定」を開いて保存してください。',
+    NO_IMAGE: '1枚目と2枚目の両方が必要です。',
+    CORS: 'CORS で弾かれた可能性。「設定」のベース URL に中継 URL を入れてください。',
+    HTTP_401: 'キーが無効（401）。',
+    HTTP_402: 'クレジット不足（402）。venice.ai/settings/api で追加。',
+    HTTP_413: '画像が大きすぎる（413）。',
+    HTTP_422: '内容ポリシーか画像過大（422）。プロンプトか画像を変える。',
+    HTTP_429: '混雑（429）。少し待って再試行。',
+    HTTP_500: '推論失敗（500）。再試行。',
+    HTTP_503: 'モデル飽和（503）。少し待つ。'
+  };
+  const describe = e => {
+    const [code, detail] = e.message.split('|');
+    return (ERR[code] || '失敗: ' + code) + (detail ? '\n' + detail : '');
+  };
+
+  $('#run').addEventListener('click', async () => {
+    clearMsg();
+    const btn = $('#run'); btn.disabled = true; btn.textContent = '生成中…';
+    msg('生成しています。30秒ほどかかることがあります。');
+    try {
+      const blob = await callApi($('#prompt').value, comp && comp.b64, face && face.b64);
+      showResult(blob); msg('完了', 'ok');
+    } catch (e) {
+      msg(describe(e), 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '生成';
+    }
+  });
+
+  $('#chain').addEventListener('click', async () => {
+    if (!face || !comp) { msg(ERR.NO_IMAGE, 'err'); return; }
+    clearMsg();
+    const btn = $('#chain'); btn.disabled = true;
+    const orig = $('#prompt').value;
+    try {
+      let base = comp.b64;
+      for (let i = 1; i <= 3; i++) {
+        $('#nude').value = i === 1 ? 'lingerie, bra and panties' : 'fully nude';
+        build();
+        btn.textContent = `step ${i}/3 生成中…`;
+        msg(`step ${i}/3 を生成しています。`);
+        const blob = await callApi($('#prompt').value, base, face.b64);
+        showResult(blob);
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        let s = ''; for (const x of buf) s += String.fromCharCode(x);
+        base = btoa(s);
+        if (i < 3) await new Promise(r => setTimeout(r, 800));
+      }
+      $('#prompt').value = orig;
+      msg('3ステップ完了。各段階の結果は履歴から確認できます。', 'ok');
+    } catch (e) {
+      msg(describe(e), 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '3ステップで回す';
+    }
+  });
+
+  $('#dl').addEventListener('click', () => {
+    if (!lastURL) return;
+    const a = document.createElement('a');
+    a.href = lastURL; a.download = 'edit-' + Date.now() + '.png'; a.click();
+  });
+  $('#asComp').addEventListener('click', async () => {
+    if (!lastURL) return;
+    const blob = await (await fetch(lastURL)).blob();
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let s = ''; for (const x of buf) s += String.fromCharCode(x);
+    comp = { b64: btoa(s), w: 0, h: 0 };
+    $('#slotComp').innerHTML = `<b>2枚目 ／ 構図</b><img src="${lastURL}" alt=""><span class="tag">前回の出力</span>`;
+    msg('前回の出力を2枚目に設定。1枚目は元の顔のまま。', 'ok');
+  });
+
+  $('#keySave').addEventListener('click', () => {
+    localStorage.setItem(LS.key, $('#key').value.trim());
+    msg('キーを保存した（この端末のみ）。', 'ok');
+  });
+  $('#keyDel').addEventListener('click', () => {
+    localStorage.removeItem(LS.key); $('#key').value = '';
+    msg('キーを消去した。', 'ok');
+  });
+  $('#base').addEventListener('change', () => localStorage.setItem(LS.base, $('#base').value.trim()));
+
+  $$('select,textarea,input[type=checkbox]').forEach(e => e.addEventListener('change', build));
+  $('#extra').addEventListener('input', build);
+
+  $('#key').value = localStorage.getItem(LS.key) || '';
+  $('#base').value = localStorage.getItem(LS.base) || '';
+  build();
+})();
+</script>
